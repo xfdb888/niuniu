@@ -9,7 +9,7 @@ function init(){
         host: "127.0.0.1",
         user: "root",
         password: "Aa123456",
-        database: "trendfinder",
+        database: "qp",
         port: 3306,
         connectionLimit: 100
     });
