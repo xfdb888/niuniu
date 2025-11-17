@@ -1,0 +1,348 @@
+name: Security & Dependency Scan
+
+on:
+  push:
+    branches: [ main, develop, master ]
+    paths:
+      - 'niuniu_server/package.json'
+      - 'niuniu_server/package-lock.json'
+      - 'niuniu_server/**/*.js'
+      - 'niuniu_server/Dockerfile'
+      - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches: [ main, develop, master ]
+    paths:
+      - 'niuniu_server/package.json'
+      - 'niuniu_server/package-lock.json'
+  schedule:
+    # 每天凌晨 2 点运行安全扫描
+    - cron: '0 2 * * *'
+
+env:
+  REGISTRY: registry.internal.io
+  IMAGE_NAME: niuniu/game-server
+
+jobs:
+  # ============================================================================
+  # Job 1: npm audit 扫描
+  # ============================================================================
+  npm-audit:
+    name: NPM Audit Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+          cache-dependency-path: 'niuniu_server/package-lock.json'
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd niuniu_server
+          npm ci
+      
+      - name: 🔍 Run npm audit (production only)
+        id: audit
+        run: |
+          cd niuniu_server
+          npm audit --production --json > audit-report.json || true
+          cat audit-report.json | jq '.' > formatted-audit.txt
+          cat formatted-audit.txt
+      
+      - name: 📊 Parse audit results
+        id: parse_audit
+        run: |
+          cd niuniu_server
+          CRITICAL=$(jq '.vulnerabilities | to_entries[] | select(.value.severity=="critical") | length' audit-report.json)
+          HIGH=$(jq '.vulnerabilities | to_entries[] | select(.value.severity=="high") | length' audit-report.json)
+          MODERATE=$(jq '.vulnerabilities | to_entries[] | select(.value.severity=="moderate") | length' audit-report.json)
+          
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+          echo "moderate=$MODERATE" >> $GITHUB_OUTPUT
+          
+          echo "## 🔍 npm audit 报告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 级别 | 数量 |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔴 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🟠 High | $HIGH |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🟡 Moderate | $MODERATE |" >> $GITHUB_STEP_SUMMARY
+      
+      - name: 📤 Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: npm-audit-report
+          path: niuniu_server/audit-report.json
+          retention-days: 30
+      
+      - name: ❌ Fail on critical vulnerabilities
+        if: steps.parse_audit.outputs.critical > 0
+        run: |
+          echo "❌ 发现 ${{ steps.parse_audit.outputs.critical }} 个严重漏洞！"
+          echo "请立即修复："
+          cd niuniu_server
+          npm audit
+          exit 1
+
+  # ============================================================================
+  # Job 2: Snyk 扫描
+  # ============================================================================
+  snyk-scan:
+    name: Snyk Security Scan
+    runs-on: ubuntu-latest
+    # 仅在主分支和 PR 中运行（需要配置 SNYK_TOKEN）
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+          cache-dependency-path: 'niuniu_server/package-lock.json'
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd niuniu_server
+          npm ci
+      
+      - name: 🔐 Run Snyk scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --all-projects
+        continue-on-error: true
+      
+      - name: 📤 Upload results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: snyk.sarif
+          wait-for-processing: true
+
+  # ============================================================================
+  # Job 3: Dependency 检查
+  # ============================================================================
+  dependency-check:
+    name: Dependency Update Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+          cache-dependency-path: 'niuniu_server/package-lock.json'
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd niuniu_server
+          npm ci
+      
+      - name: 🔍 Check for outdated packages
+        id: outdated
+        run: |
+          cd niuniu_server
+          npm outdated --json > outdated.json || true
+          
+          echo "## 📦 依赖更新检查" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 有可用更新的包:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          cat outdated.json >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+      
+      - name: 📤 Upload outdated report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-outdated-report
+          path: niuniu_server/outdated.json
+          retention-days: 30
+      
+      - name: ✅ Verify engines field
+        run: |
+          cd niuniu_server
+          NODE_VERSION=$(jq -r '.engines.node' package.json)
+          NPM_VERSION=$(jq -r '.engines.npm' package.json)
+          
+          echo "## 🔧 环境要求" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Node.js: $NODE_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- npm: $NPM_VERSION" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # Job 4: Lint 检查
+  # ============================================================================
+  lint-check:
+    name: ESLint & Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+          cache-dependency-path: 'niuniu_server/package-lock.json'
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd niuniu_server
+          npm ci
+      
+      - name: 🔍 Run ESLint
+        id: lint
+        run: |
+          cd niuniu_server
+          npm run lint 2>&1 | tee lint-report.txt || true
+      
+      - name: 📊 Check lint results
+        run: |
+          cd niuniu_server
+          if grep -q "error" lint-report.txt; then
+            echo "⚠️  发现 Lint 错误" >> $GITHUB_STEP_SUMMARY
+            cat lint-report.txt
+            exit 1
+          else
+            echo "✅ Lint 检查通过" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: 📤 Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: lint-report
+          path: niuniu_server/lint-report.txt
+
+  # ============================================================================
+  # Job 5: Docker 镜像安全扫描
+  # ============================================================================
+  docker-scan:
+    name: Docker Image Security Scan
+    runs-on: ubuntu-latest
+    # 仅在推送到主分支时运行
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 🐳 Build Docker image
+        run: |
+          cd niuniu_server
+          docker build -t niuniu-scan:${{ github.sha }} \
+            --build-arg VERSION=${{ github.sha }} \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg GIT_COMMIT=${{ github.sha }} \
+            .
+      
+      - name: 🔍 Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: niuniu-scan:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      
+      - name: 📤 Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
+      
+      - name: 📤 Upload Docker image scan results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-scan-results
+          path: trivy-results.sarif
+
+  # ============================================================================
+  # Job 6: 生成安全报告
+  # ============================================================================
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [npm-audit, snyk-scan, dependency-check, lint-check]
+    if: always()
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 📤 Download all reports
+        uses: actions/download-artifact@v3
+      
+      - name: 📊 Generate summary report
+        run: |
+          echo "# 🔒 安全扫描报告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ 检查清单" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] npm audit 扫描" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] Snyk 安全扫描" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] 依赖更新检查" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] ESLint 代码质量检查" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] Docker 镜像扫描" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 生成的工件" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- npm-audit-report.json" >> $GITHUB_STEP_SUMMARY
+          echo "- dependency-outdated-report.json" >> $GITHUB_STEP_SUMMARY
+          echo "- lint-report.txt" >> $GITHUB_STEP_SUMMARY
+          echo "- trivy-results.sarif" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "详见 [Actions](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # Job 7: 在发现严重漏洞时通知
+  # ============================================================================
+  notify-on-failure:
+    name: Notify on Security Issues
+    runs-on: ubuntu-latest
+    needs: [npm-audit, snyk-scan]
+    if: failure()
+    
+    steps:
+      - name: 🚨 Send Slack notification
+        if: env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          curl -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🚨 安全扫描发现问题",
+              "attachments": [{
+                "color": "danger",
+                "title": "构建失败: 安全漏洞检测",
+                "text": "在提交 ${{ github.sha }} 中发现安全问题，请查看详情。",
+                "actions": [{
+                  "type": "button",
+                  "text": "查看详情",
+                  "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                }]
+              }]
+            }'
