@@ -1,0 +1,14 @@
+node_modules/
+*.log
+dist/
+build/
+.git/
+niuniu_client/
+niuniu_server/center_server/
+niuniu_server/login_server/
+niuniu_server/hall_server/
+niuniu_server/majiang_server/
+niuniu_server/common/
+niuniu_server/utils/
+niuniu_server/launch.js
+niuniu_server/backstage.js

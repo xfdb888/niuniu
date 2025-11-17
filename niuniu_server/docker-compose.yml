@@ -1,0 +1,220 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Redis 服务 (缓存和会话存储)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: niuniu-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-niuniu123}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # MySQL 服务 (用户数据和游戏数据)
+  # ============================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: niuniu-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: niuniu
+      MYSQL_USER: ${MYSQL_USER:-niuniu}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-niuniu123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backup/niuniu.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # 登录服务器
+  # ============================================================================
+  login-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: niuniu-login-server
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-niuniu123}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-niuniu}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-niuniu123}
+      MYSQL_DATABASE: niuniu
+      LOG_LEVEL: info
+    ports:
+      - "3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+    labels:
+      service: "login"
+      version: "1.0.0"
+
+  # ============================================================================
+  # 游戏厅服务器
+  # ============================================================================
+  hall-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: niuniu-hall-server
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-niuniu123}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-niuniu}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-niuniu123}
+      MYSQL_DATABASE: niuniu
+      LOG_LEVEL: info
+    ports:
+      - "3002:3002"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+    labels:
+      service: "hall"
+      version: "1.0.0"
+
+  # ============================================================================
+  # 牛牛游戏服务器
+  # ============================================================================
+  game-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: niuniu-game-server
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-niuniu123}
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-niuniu}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-niuniu123}
+      MYSQL_DATABASE: niuniu
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+    labels:
+      service: "game"
+      version: "1.0.0"
+
+  # ============================================================================
+  # Prometheus 监控（可选）
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: niuniu-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+    depends_on:
+      - login-server
+      - hall-server
+      - game-server
+
+  # ============================================================================
+  # Grafana 仪表盘（可选）
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: niuniu-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+    ports:
+      - "3003:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - niuniu-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+networks:
+  niuniu-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  mysql-data:
+  prometheus-data:
+  grafana-data:

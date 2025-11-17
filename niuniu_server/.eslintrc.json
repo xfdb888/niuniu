@@ -1,0 +1,13 @@
+{
+    "root": false,
+    "env": {
+        "node": true,
+        "es2021": true
+    },
+    "extends": "../.eslintrc.json",
+    "rules": {
+        "no-console": [
+            "off"
+        ]
+    }
+}

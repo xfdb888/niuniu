@@ -1,0 +1,21 @@
+{
+    "env": {
+        "node": true,
+        "mocha": true,
+        "es2021": true
+    },
+    "extends": "../.eslintrc.json",
+    "globals": {
+        "describe": "readonly",
+        "it": "readonly",
+        "before": "readonly",
+        "after": "readonly",
+        "beforeEach": "readonly",
+        "afterEach": "readonly"
+    },
+    "rules": {
+        "no-console": [
+            "off"
+        ]
+    }
+}

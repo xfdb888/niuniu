@@ -1,0 +1,63 @@
+name: Node 兼容性检测和 CI 构建
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  compatibility-check:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x]
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      # 1. 使用指定的 Node 版本
+      - name: 设置 Node.js 版本
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+      
+      # 2. 验证 Node 版本
+      - name: 验证 Node 和 npm 版本
+        run: |
+          node --version
+          npm --version
+      
+      # 3. 检查 .nvmrc 配置
+      - name: 验证 nvm 配置
+        run: |
+          echo "Project Node version: $(cat .nvmrc)"
+      
+      # 4. 安装依赖 (使用 npm ci 保证一致性)
+      - name: 安装项目依赖
+        run: npm ci
+      
+      # 5. 安装服务器依赖
+      - name: 安装服务器依赖
+        run: cd niuniu_server && npm ci
+      
+      # 6. 运行兼容性检测
+      - name: 运行兼容性检测
+        run: node check-compatibility.js
+      
+      # 7. 代码语法检查
+      - name: 检查服务器代码语法
+        run: node -c niuniu_server/launch.js
+      
+      # 8. 列出依赖版本
+      - name: 显示依赖版本
+        run: |
+          echo "=== 项目依赖 ==="
+          npm list --depth=0
+          echo ""
+          echo "=== 服务器依赖 ==="
+          cd niuniu_server && npm list --depth=0
+      
+      - name: 构建完成
+        run: echo "✓ 兼容性检测和依赖安装完成"

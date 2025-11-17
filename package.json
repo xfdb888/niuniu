@@ -1,0 +1,32 @@
+{
+    "name": "niuniu",
+    "version": "1.0.0",
+    "description": "牛牛棋牌前后端项目",
+    "private": true,
+    "scripts": {
+        "start": "cd niuniu_server && npm start",
+        "install-all": "npm install && cd niuniu_server && npm install",
+        "ci-all": "npm ci && cd niuniu_server && npm ci",
+        "lint": "eslint . --ext .js --ignore-pattern node_modules",
+        "lint:fix": "eslint . --ext .js --ignore-pattern node_modules --fix",
+        "test": "npm run test:server",
+        "test:server": "cd niuniu_server && npm test"
+    },
+    "devDependencies": {
+        "eslint": "^8.57.1"
+    },
+    "workspaces": [
+        "niuniu_server"
+    ],
+    "keywords": [
+        "game",
+        "niuniu",
+        "poker"
+    ],
+    "author": "",
+    "license": "ISC",
+    "engines": {
+        "node": "18.x",
+        "npm": "10.x"
+    }
+}

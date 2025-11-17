@@ -1,0 +1,40 @@
+{
+    "name": "niuniu_server",
+    "version": "1.0.0",
+    "description": "牛牛棋牌游戏服务器",
+    "main": "launch.js",
+    "scripts": {
+        "start": "node launch.js",
+        "lint": "eslint . --ext .js --ignore-pattern node_modules",
+        "lint:fix": "eslint . --ext .js --ignore-pattern node_modules --fix",
+        "test": "mocha test/**/*.test.js --timeout 5000",
+        "test:watch": "mocha test/**/*.test.js --watch --timeout 5000"
+    },
+    "keywords": [
+        "game",
+        "niuniu",
+        "server"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "async": "^3.2.5",
+        "express": "^4.21.2",
+        "lodash": "^4.17.21",
+        "log4js": "^1.1.1",
+        "mysql": "^2.18.1",
+        "nodemailer": "^6.9.13",
+        "redis": "^4.7.0",
+        "request": "^2.88.2",
+        "ws": "^8.18.0"
+    },
+    "engines": {
+        "node": "18.x",
+        "npm": "10.x"
+    },
+    "devDependencies": {
+        "chai": "^4.5.0",
+        "eslint": "^9.0.0",
+        "mocha": "^10.8.2"
+    }
+}
