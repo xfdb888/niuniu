@@ -1,0 +1,474 @@
+openapi: 3.0.0
+info:
+  title: NiuNiu Game Admin API
+  version: 1.0.0
+  description: Production-ready admin management API for NiuNiu game
+
+servers:
+  - url: http://localhost:7011
+    description: Local admin server
+  - url: https://admin.niuniu.game
+    description: Production admin server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Admin:
+      type: object
+      properties:
+        adminId:
+          type: string
+        adminName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [super_admin, admin, finance, support, operator]
+
+    User:
+      type: object
+      properties:
+        userId:
+          type: string
+        account:
+          type: string
+        registerTime:
+          type: string
+          format: date-time
+        status:
+          type: integer
+          enum: [0, 1] # 0=active, 1=banned
+        balance:
+          type: number
+
+    Room:
+      type: object
+      properties:
+        roomId:
+          type: string
+        gameType:
+          type: string
+        playerCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: integer
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [RECHARGE, WITHDRAW, GAME_WIN, GAME_LOSS]
+        amount:
+          type: number
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        adminId:
+          type: string
+        adminName:
+          type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        success:
+          type: boolean
+        ip:
+          type: string
+        timestamp:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+  /admin/login:
+    post:
+      summary: Admin login (username & password)
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account:
+                  type: string
+                password:
+                  type: string
+      responses:
+        200:
+          description: Login successful or MFA required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      code:
+                        type: integer
+                        example: 0
+                      message:
+                        type: string
+                        example: Login successful
+                      data:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+                          admin:
+                            $ref: '#/components/schemas/Admin'
+                  - type: object
+                    properties:
+                      code:
+                        type: integer
+                        example: 0
+                      message:
+                        type: string
+                        example: MFA required
+                      data:
+                        type: object
+                        properties:
+                          mfaToken:
+                            type: string
+                          mfaRequired:
+                            type: boolean
+
+  /admin/verify-mfa:
+    post:
+      summary: Verify MFA code
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mfaToken:
+                  type: string
+                totpCode:
+                  type: string
+      responses:
+        200:
+          description: MFA verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+
+  /admin/users:
+    get:
+      summary: Get user list
+      tags: [User Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
+      responses:
+        200:
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+
+  /admin/users/{userId}/ban:
+    post:
+      summary: Ban user
+      tags: [User Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                duration:
+                  type: integer
+                  description: Duration in days (0 = permanent)
+      responses:
+        200:
+          description: User banned successfully
+
+  /admin/rooms:
+    get:
+      summary: Get room list
+      tags: [Room Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: status
+          in: query
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Room list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      rooms:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Room'
+
+  /admin/rooms/{roomId}/kick:
+    post:
+      summary: Kick player from room
+      tags: [Room Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        200:
+          description: Player kicked successfully
+
+  /admin/finance/balance:
+    get:
+      summary: Get user balance and transactions
+      tags: [Finance Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        200:
+          description: Balance and transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      transactions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Transaction'
+
+  /admin/finance/recharge:
+    post:
+      summary: Add balance to user (recharge)
+      tags: [Finance Management]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                amount:
+                  type: number
+                note:
+                  type: string
+      responses:
+        200:
+          description: Recharge successful
+
+  /admin/risk/rules:
+    get:
+      summary: Get risk control rules
+      tags: [Risk Control]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Risk rules list
+    post:
+      summary: Create/update risk control rule
+      tags: [Risk Control]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ruleName:
+                  type: string
+                ruleType:
+                  type: string
+                threshold:
+                  type: number
+                action:
+                  type: string
+                description:
+                  type: string
+      responses:
+        200:
+          description: Rule created/updated
+
+  /admin/audit-logs:
+    get:
+      summary: Get audit logs
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: adminId
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: startTime
+          in: query
+          schema:
+            type: integer
+        - name: endTime
+          in: query
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      logs:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AuditLog'

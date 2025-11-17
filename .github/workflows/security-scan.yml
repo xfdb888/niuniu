@@ -116,6 +116,15 @@ jobs:
           cd niuniu_server
           npm ci
       
+      - name: 🔎 Verify Snyk token
+        run: |
+          if [ -z "${SNYK_TOKEN}" ]; then
+            echo "⚠️  SNYK_TOKEN 未配置。请在仓库 Secrets 中设置 SNYK_TOKEN，以启用 Snyk 扫描。"
+            exit 1
+          fi
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
       - name: 🔐 Run Snyk scan
         uses: snyk/actions/node@master
         env:
