@@ -99,17 +99,18 @@ CREATE TABLE IF NOT EXISTS transactions (
   INDEX (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 初始化超级管理员账户（密码应在生产环境中使用 bcrypt）
-INSERT INTO admin_users (adminId, adminName, account, passwordHash, roles, mfaEnabled)
-VALUES ('admin_001', 'Super Admin', 'admin', 'admin123456', 'super_admin', 0)
-ON DUPLICATE KEY UPDATE adminName = VALUES(adminName);
+-- 注意：以下是示例，实际密码应通过 admin/init-admins.js 脚本生成 bcrypt 哈希
+-- 运行命令: node admin/init-admins.js
+-- 此脚本会创建默认管理员账户（admin, finance, support）
 
--- 示例：创建财务管理员
-INSERT INTO admin_users (adminId, adminName, account, passwordHash, roles, mfaEnabled)
-VALUES ('admin_002', 'Finance Manager', 'finance', 'finance123456', 'finance', 0)
-ON DUPLICATE KEY UPDATE adminName = VALUES(adminName);
+-- 创建表后，建议先执行 init-admins.js 脚本来安全地创建初始管理员
+-- 以下 INSERT 语句已注释，避免使用明文密码
 
--- 示例：创建客服管理员
-INSERT INTO admin_users (adminId, adminName, account, passwordHash, roles, mfaEnabled)
-VALUES ('admin_003', 'Customer Support', 'support', 'support123456', 'support', 0)
+/*
+INSERT INTO admin_users (adminId, adminName, account, passwordHash, roles, mfaEnabled, email, status, createdAt)
+VALUES 
+  ('admin_001', 'Super Admin', 'admin', '$2a$10$...bcrypt_hash...', 'super_admin', 0, 'admin@example.com', 'active', NOW()),
+  ('admin_002', 'Finance Manager', 'finance', '$2a$10$...bcrypt_hash...', 'finance', 0, 'finance@example.com', 'active', NOW()),
+  ('admin_003', 'Customer Support', 'support', '$2a$10$...bcrypt_hash...', 'support', 0, 'support@example.com', 'active', NOW())
 ON DUPLICATE KEY UPDATE adminName = VALUES(adminName);
+*/

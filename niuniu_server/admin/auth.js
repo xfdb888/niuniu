@@ -2,10 +2,12 @@
 
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 // 密钥（生产环境应从环境变量读取）
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '8h';
+const BCRYPT_ROUNDS = 10;
 
 /**
  * 管理员角色定义
@@ -191,6 +193,33 @@ function requireMFA(req, res, next) {
     next();
 }
 
+/**
+ * 对密码进行哈希处理（用于存储）
+ * @param {string} password - 明文密码
+ * @returns {Promise<string>} - bcrypt 哈希密码
+ */
+async function hashPassword(password) {
+    try {
+        return await bcrypt.hash(password, BCRYPT_ROUNDS);
+    } catch (err) {
+        throw new Error('Password hashing failed: ' + err.message);
+    }
+}
+
+/**
+ * 验证密码（比较明文与哈希密码）
+ * @param {string} password - 输入的明文密码
+ * @param {string} hash - 存储的 bcrypt 哈希密码
+ * @returns {Promise<boolean>} - 是否匹配
+ */
+async function verifyPassword(password, hash) {
+    try {
+        return await bcrypt.compare(password, hash);
+    } catch (err) {
+        throw new Error('Password verification failed: ' + err.message);
+    }
+}
+
 module.exports = {
     ROLES,
     PERMISSIONS,
@@ -202,4 +231,6 @@ module.exports = {
     authMiddleware,
     requirePermission,
     requireMFA,
+    hashPassword,
+    verifyPassword,
 };

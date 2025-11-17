@@ -49,17 +49,22 @@ app.post('/admin/login', (req, res) => {
       FROM admin_users 
       WHERE account = ?
     `;
-    db.query(query, [account], (err, admins) => {
+    db.query(query, [account], async (err, admins) => {
       if (err || !admins || admins.length === 0) {
         return res.status(401).json({ code: 401, message: 'Invalid credentials' });
       }
 
       const admin = admins[0];
 
-      // 简单密码验证（实际应使用 bcrypt）
-      // TODO: 在生产环境中，使用 bcrypt 来哈希和验证密码
-      if (admin.passwordHash !== password) {
-        return res.status(401).json({ code: 401, message: 'Invalid credentials' });
+      // 使用 bcrypt 验证密码
+      try {
+        const isPasswordValid = await auth.verifyPassword(password, admin.passwordHash);
+        if (!isPasswordValid) {
+          return res.status(401).json({ code: 401, message: 'Invalid credentials' });
+        }
+      } catch (bcryptErr) {
+        logger.error_log.error('Password verification error:', bcryptErr);
+        return res.status(500).json({ code: 500, message: 'Internal server error' });
       }
 
       // 如果启用了 MFA，返回临时令牌
